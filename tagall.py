@@ -34,7 +34,6 @@ def time_keyboard():
 @ONLY_ADMIN
 async def tagall_cmd(client, message):
     chat_id = message.chat.id
-    user = message.from_user
 
     if active_tasks.get(chat_id):
         return await message.reply("❌ Tagall sedang berjalan\nGunakan /cancel")
@@ -50,19 +49,26 @@ async def tagall_cmd(client, message):
     if not text:
         return await message.reply("❗ Balas pesan atau isi teks tagall")
 
+    starter = message.from_user
+    starter_name = starter.first_name
+    starter_username = f"@{starter.username}" if starter.username else "-"
+    starter_id = starter.id
+
     active_tasks[chat_id] = {
         "text": text,
-        "starter": f"{user.mention} (<code>{user.id}</code>)"
+        "starter_log": (
+            f"🧾 <b>Tagall dimulai oleh</b>\n"
+            f"• Nama : {starter_name}\n"
+            f"• Username : {starter_username}\n"
+            f"• ID : <code>{starter_id}</code>"
+        )
     }
     task_messages[chat_id] = []
 
-    selector = await message.reply(
-        f"👤 <b>Tagall dimulai oleh:</b> {user.mention}\n\n"
+    await message.reply(
         "⏱ <b>Pilih durasi Tagall</b>",
         reply_markup=time_keyboard()
     )
-
-    active_tasks[chat_id]["selector"] = selector.id
 
 @app.on_callback_query(filters.regex("^tagtime_"))
 async def tagall_time_cb(client, cq: CallbackQuery):
@@ -71,7 +77,7 @@ async def tagall_time_cb(client, cq: CallbackQuery):
     if chat_id not in active_tasks:
         return await cq.answer("❌ Tagall tidak aktif", show_alert=True)
 
-    # hapus pesan pilihan waktu
+    # hapus pesan pemilih waktu
     try:
         await cq.message.delete()
     except:
@@ -79,7 +85,12 @@ async def tagall_time_cb(client, cq: CallbackQuery):
 
     timeout = int(cq.data.split("_")[1])
     text = active_tasks[chat_id]["text"]
-    starter = active_tasks[chat_id]["starter"]
+
+    # 🔹 KIRIM LOG HANYA SEKALI
+    log_msg = await client.send_message(
+        chat_id,
+        active_tasks[chat_id]["starter_log"]
+    )
 
     async def tag_members():
         usernum = 0
@@ -98,7 +109,7 @@ async def tagall_time_cb(client, cq: CallbackQuery):
             if usernum == 7:
                 msg = await client.send_message(
                     chat_id,
-                    f"<b>{text}</b>\n{usertxt}\n\n👤 <b>Dimulai oleh:</b> {starter}{POWERED}",
+                    f"<b>{text}</b>\n{usertxt}{POWERED}",
                     disable_web_page_preview=True
                 )
                 task_messages[chat_id].append(msg.id)
@@ -109,7 +120,7 @@ async def tagall_time_cb(client, cq: CallbackQuery):
         if usertxt:
             msg = await client.send_message(
                 chat_id,
-                f"<b>{text}</b>\n{usertxt}\n\n👤 <b>Dimulai oleh:</b> {starter}{POWERED}",
+                f"<b>{text}</b>\n{usertxt}{POWERED}",
                 disable_web_page_preview=True
             )
             task_messages[chat_id].append(msg.id)
@@ -122,14 +133,12 @@ async def tagall_time_cb(client, cq: CallbackQuery):
     except asyncio.TimeoutError:
         pass
     finally:
-        await notify_and_cleanup(client, chat_id)
+        await notify_and_cleanup(client, chat_id, log_msg.id)
 
-async def notify_and_cleanup(client, chat_id):
-    starter = active_tasks[chat_id]["starter"]
-
+async def notify_and_cleanup(client, chat_id, log_id):
     notice = await client.send_message(
         chat_id,
-        f"⏳ <b>Tagall oleh {starter} akan dihapus dalam 1 menit</b>"
+        "⏳ <b>Tagall akan dihapus dalam 1 menit</b>"
     )
 
     await asyncio.sleep(60)
@@ -140,10 +149,11 @@ async def notify_and_cleanup(client, chat_id):
         except:
             pass
 
-    try:
-        await notice.delete()
-    except:
-        pass
+    for mid in [notice.id, log_id]:
+        try:
+            await client.delete_messages(chat_id, mid)
+        except:
+            pass
 
     active_tasks.pop(chat_id, None)
     task_messages.pop(chat_id, None)
@@ -158,4 +168,4 @@ async def cancel_tagall(_, message):
         await message.reply("✅ Tagall dibatalkan")
     else:
         await message.reply("⚠️ Tidak ada tagall aktif")
-  
+
