@@ -9,7 +9,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQ
 active_tasks = {}
 task_messages = {}
 
-POWERED = "\n\n<b>Powered by @pranstore</b>"
+POWERED = "\n\n<blockqute><b>Powered by @pranstore</b></blockqute>"
 
 def random_emoji():
     emojis = "🍦 🎈 🎸 🌼 🌳 🚀 🎩 📷 💡 🏄‍♂️ 🎹 🚲 🍕 🌟 🎨 📚 🚁 🎮 🍔 🍉 🎉 🎵 🌸 🌈 🏝️ 🌞 🎢 🚗 🎭 🍩 🎲 📱 🏖️ 🛸 🧩 🚢 🎠 🏰 🎯 🥳 🎰 🛒 🧸 🛺 🧊 🛷 🦩 🎡 🎣 🏹 🧁 🥨 🎻 🎺 🥁 🛹".split()
@@ -106,7 +106,7 @@ async def tagall_time_cb(client, cq: CallbackQuery):
             usernum += 1
             usertxt += f"[{random_emoji()}](tg://user?id={m.user.id}) "
 
-            if usernum == 7:
+            if usernum == 10:
                 msg = await client.send_message(
                     chat_id,
                     f"<b>{text}</b>\n{usertxt}{POWERED}",
