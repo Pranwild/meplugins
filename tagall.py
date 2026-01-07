@@ -105,9 +105,6 @@ async def tagall_time_cb(client, cq: CallbackQuery):
                 msg = await client.send_message(
                     chat_id,
                     f"<b>{text}</b>\n{usertxt}{POWERED}",
-                    reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("🛑 Batal Tagall", callback_data="tag_cancel")]]
-                    ),
                     disable_web_page_preview=True
                 )
                 task_messages[chat_id].append(msg.id)
@@ -119,9 +116,6 @@ async def tagall_time_cb(client, cq: CallbackQuery):
             msg = await client.send_message(
                 chat_id,
                 f"<b>{text}</b>\n{usertxt}{POWERED}",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🛑 Batal Tagall", callback_data="tag_cancel")]]
-                ),
                 disable_web_page_preview=True
             )
             task_messages[chat_id].append(msg.id)
