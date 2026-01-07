@@ -4,7 +4,7 @@ import config
 from core import app
 from utils.decorators import ONLY_ADMIN, ONLY_GROUP
 from pyrogram import filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 active_tasks = {}
 task_messages = {}
@@ -25,9 +25,6 @@ def time_keyboard():
             [
                 InlineKeyboardButton("⏱ 10 Menit", callback_data="tagtime_600"),
                 InlineKeyboardButton("♾ Bebas", callback_data="tagtime_0"),
-            ],
-            [
-                InlineKeyboardButton("🛑 Batal Tagall", callback_data="tag_cancel")
             ],
         ]
     )
@@ -58,6 +55,7 @@ async def tagall_cmd(client, message):
 
     active_tasks[chat_id] = {
         "text": text,
+        "starter_id": starter_id,
         "end_log": (
             f"🧾 <b>Tagall berakhir</b>\n"
             f"• Username : {starter_username}\n"
@@ -73,7 +71,7 @@ async def tagall_cmd(client, message):
     )
 
 @app.on_callback_query(filters.regex("^tagtime_"))
-async def tagall_time_cb(client, cq: CallbackQuery):
+async def tagall_time_cb(client, cq):
     chat_id = cq.message.chat.id
 
     if chat_id not in active_tasks:
@@ -131,18 +129,21 @@ async def tagall_time_cb(client, cq: CallbackQuery):
         if chat_id in active_tasks:
             await notify_and_cleanup(client, chat_id)
 
-@app.on_callback_query(filters.regex("^tag_cancel$"))
+# =========================
+# COMMAND BATAL TAGALL
+# =========================
+@app.on_message(filters.command(["batal", "cancel"]))
+@ONLY_GROUP
 @ONLY_ADMIN
-async def cancel_tagall_inline(client, cq: CallbackQuery):
-    chat_id = cq.message.chat.id
+async def cancel_tagall_cmd(client, message):
+    chat_id = message.chat.id
 
     if chat_id not in active_tasks:
-        return await cq.answer("❌ Tagall tidak aktif", show_alert=True)
+        return await message.reply("❌ Tidak ada tagall yang sedang berjalan")
 
     active_tasks.pop(chat_id, None)
 
-    await cq.message.reply("🛑 <b>Tagall dibatalkan oleh admin</b>")
-    await cq.answer("Tagall dibatalkan")
+    await message.reply("🛑 <b>Tagall dibatalkan oleh admin</b>")
 
 async def notify_and_cleanup(client, chat_id):
     notice = await client.send_message(
