@@ -9,7 +9,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQ
 active_tasks = {}
 task_messages = {}
 
-POWERED = "\n\n<blockqute><b>Powered by @pranstore</b></blockqute>"
+POWERED = "\n\n<blockquote><b>Powered by @pranstore</b></blockquote>"
 
 def random_emoji():
     emojis = "🍦 🎈 🎸 🌼 🌳 🚀 🎩 📷 💡 🏄‍♂️ 🎹 🚲 🍕 🌟 🎨 📚 🚁 🎮 🍔 🍉 🎉 🎵 🌸 🌈 🏝️ 🌞 🎢 🚗 🎭 🍩 🎲 📱 🏖️ 🛸 🧩 🚢 🎠 🏰 🎯 🥳 🎰 🛒 🧸 🛺 🧊 🛷 🦩 🎡 🎣 🏹 🧁 🥨 🎻 🎺 🥁 🛹".split()
@@ -26,6 +26,9 @@ def time_keyboard():
                 InlineKeyboardButton("⏱ 10 Menit", callback_data="tagtime_600"),
                 InlineKeyboardButton("♾ Bebas", callback_data="tagtime_0"),
             ],
+            [
+                InlineKeyboardButton("🛑 Batal Tagall", callback_data="tag_cancel")
+            ],
         ]
     )
 
@@ -36,7 +39,7 @@ async def tagall_cmd(client, message):
     chat_id = message.chat.id
 
     if active_tasks.get(chat_id):
-        return await message.reply("❌ Tagall sedang berjalan\nGunakan /cancel")
+        return await message.reply("❌ Tagall sedang berjalan")
 
     replied = message.reply_to_message
     text = None
@@ -50,19 +53,18 @@ async def tagall_cmd(client, message):
         return await message.reply("❗ Balas pesan atau isi teks tagall")
 
     starter = message.from_user
-    starter_name = starter.first_name
     starter_username = f"@{starter.username}" if starter.username else "-"
     starter_id = starter.id
 
     active_tasks[chat_id] = {
         "text": text,
-        "starter_log": (
-            f"🧾 <b>Tagall dimulai oleh</b>\n"
-            f"• Nama : {starter_name}\n"
+        "end_log": (
+            f"🧾 <b>Tagall berakhir</b>\n"
             f"• Username : {starter_username}\n"
             f"• ID : <code>{starter_id}</code>"
         )
     }
+
     task_messages[chat_id] = []
 
     await message.reply(
@@ -77,7 +79,6 @@ async def tagall_time_cb(client, cq: CallbackQuery):
     if chat_id not in active_tasks:
         return await cq.answer("❌ Tagall tidak aktif", show_alert=True)
 
-    # hapus pesan pemilih waktu
     try:
         await cq.message.delete()
     except:
@@ -85,12 +86,6 @@ async def tagall_time_cb(client, cq: CallbackQuery):
 
     timeout = int(cq.data.split("_")[1])
     text = active_tasks[chat_id]["text"]
-
-    # 🔹 KIRIM LOG HANYA SEKALI
-    log_msg = await client.send_message(
-        chat_id,
-        active_tasks[chat_id]["starter_log"]
-    )
 
     async def tag_members():
         usernum = 0
@@ -110,6 +105,9 @@ async def tagall_time_cb(client, cq: CallbackQuery):
                 msg = await client.send_message(
                     chat_id,
                     f"<b>{text}</b>\n{usertxt}{POWERED}",
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("🛑 Batal Tagall", callback_data="tag_cancel")]]
+                    ),
                     disable_web_page_preview=True
                 )
                 task_messages[chat_id].append(msg.id)
@@ -121,6 +119,9 @@ async def tagall_time_cb(client, cq: CallbackQuery):
             msg = await client.send_message(
                 chat_id,
                 f"<b>{text}</b>\n{usertxt}{POWERED}",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🛑 Batal Tagall", callback_data="tag_cancel")]]
+                ),
                 disable_web_page_preview=True
             )
             task_messages[chat_id].append(msg.id)
@@ -133,9 +134,23 @@ async def tagall_time_cb(client, cq: CallbackQuery):
     except asyncio.TimeoutError:
         pass
     finally:
-        await notify_and_cleanup(client, chat_id, log_msg.id)
+        if chat_id in active_tasks:
+            await notify_and_cleanup(client, chat_id)
 
-async def notify_and_cleanup(client, chat_id, log_id):
+@app.on_callback_query(filters.regex("^tag_cancel$"))
+@ONLY_ADMIN
+async def cancel_tagall_inline(client, cq: CallbackQuery):
+    chat_id = cq.message.chat.id
+
+    if chat_id not in active_tasks:
+        return await cq.answer("❌ Tagall tidak aktif", show_alert=True)
+
+    active_tasks.pop(chat_id, None)
+
+    await cq.message.reply("🛑 <b>Tagall dibatalkan oleh admin</b>")
+    await cq.answer("Tagall dibatalkan")
+
+async def notify_and_cleanup(client, chat_id):
     notice = await client.send_message(
         chat_id,
         "⏳ <b>Tagall akan dihapus dalam 1 menit</b>"
@@ -149,23 +164,14 @@ async def notify_and_cleanup(client, chat_id, log_id):
         except:
             pass
 
-    for mid in [notice.id, log_id]:
-        try:
-            await client.delete_messages(chat_id, mid)
-        except:
-            pass
+    try:
+        await notice.delete()
+    except:
+        pass
+
+    end_log = active_tasks[chat_id]["end_log"]
+    await client.send_message(chat_id, end_log)
 
     active_tasks.pop(chat_id, None)
     task_messages.pop(chat_id, None)
-
-@app.on_message(filters.command("cancel") & ~config.BANNED_USERS)
-@ONLY_GROUP
-@ONLY_ADMIN
-async def cancel_tagall(_, message):
-    chat_id = message.chat.id
-    if chat_id in active_tasks:
-        active_tasks.pop(chat_id, None)
-        await message.reply("✅ Tagall dibatalkan")
-    else:
-        await message.reply("⚠️ Tidak ada tagall aktif")
 
