@@ -10,7 +10,7 @@ from utils.decorators import ONLY_ADMIN, ONLY_GROUP
 
 active_tagall = {}
 
-EMOJIS = "🔥 ⚡ 💥 🚀 🎯 👑 💎 🥶 🐉 🌪️".split()
+EMOJIS = "🔥 ⚡ 🎯 🌸 💎 👑 🥶 🍀 🌈 🌟".split()
 
 def rand_emoji():
     return random.choice(EMOJIS)
@@ -30,7 +30,7 @@ DURATIONS = {
 @ONLY_ADMIN
 async def tagall_start(client, message):
     if message.chat.id in active_tagall:
-        return await message.reply("❌ Tagall sedang berjalan")
+        return await message.reply("<blockquote>❌ Tagall sedang berjalan</blockquote>")
 
     text = None
     if message.reply_to_message:
@@ -39,7 +39,7 @@ async def tagall_start(client, message):
         text = message.text.split(None, 1)[1]
 
     if not text:
-        return await message.reply("❗ Reply pesan atau isi teks tagall")
+        return await message.reply("<blockquote>❗ Reply pesan atau isi teks tagall</blockquote>")
 
     active_tagall[message.chat.id] = {
         "text": text,
@@ -98,7 +98,7 @@ async def tagall_callback(client, cq):
     )
 
 
-# ================= RUN TAGALL =================
+# ================= RUN TAGALL (NORMAL SPEED) =================
 async def run_tagall(client, chat_id, starter, text, duration):
     start_time = time.time()
     mentioned = 0
@@ -122,8 +122,8 @@ async def run_tagall(client, chat_id, starter, text, duration):
             )
             mentioned += 1
 
-            # batch besar = cepat tapi masih aman
-            if len(batch) == 8:
+            # NORMAL: 5 user per batch + delay
+            if len(batch) == 5:
                 msg = await client.send_message(
                     chat_id,
                     f"<b>{text}</b>\n\n"
@@ -133,6 +133,7 @@ async def run_tagall(client, chat_id, starter, text, duration):
                 )
                 sent_msgs.append(msg)
                 batch.clear()
+                await asyncio.sleep(2)  # ⬅️ delay normal
 
     except FloodWait as e:
         await asyncio.sleep(e.value)
