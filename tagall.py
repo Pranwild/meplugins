@@ -1,204 +1,183 @@
-import random
 import asyncio
-import config
-from core import app
-from utils.decorators import ONLY_ADMIN, ONLY_GROUP
-from pyrogram import filters
+import time
+from pyrogram import filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-active_tasks = {}
-task_messages = {}
-
-POWERED = "<blockquote><b>Powered by : @Pranstore</b></blockquote>"
+from core import app
 
 # =====================
-# EMOJI RANDOM
+# STATE GLOBAL
 # =====================
-def random_emoji():
-    emojis = "🍦 🎈 🎸 🌼 🌳 🚀 🎩 📷 💡 🏄‍♂️ 🎹 🚲 🍕 🌟 🎨 📚 🚁 🎮 🍔 🍉 🎉 🎵 🌸 🌈 🏝️ 🌞 🎢 🚗 🎭 🍩 🎲 📱 🏖️ 🛸 🧩 🚢 🎠 🏰 🎯 🥳 🎰 🛒 🧸 🛺 🧊 🛷 🦩 🎡 🎣 🏹 🧁 🥨 🎻 🎺 🥁 🛹".split()
-    return random.choice(emojis)
+TAGALL_HOOK = {}
+TAGALL_MSG_IDS = {}  # simpan semua message_id batch lama
 
 # =====================
-# PILIH DURASI
+# INLINE KEYBOARD
 # =====================
-def time_keyboard():
+def tagall_keyboard():
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("⏱ 3 Menit", callback_data="tagtime_180"),
-                InlineKeyboardButton("⏱ 5 Menit", callback_data="tagtime_300"),
+                InlineKeyboardButton("⏱ 3 Menit", callback_data="hook_180"),
+                InlineKeyboardButton("⏱ 5 Menit", callback_data="hook_300"),
             ],
             [
-                InlineKeyboardButton("⏱ 10 Menit", callback_data="tagtime_600"),
-                InlineKeyboardButton("♾ Bebas", callback_data="tagtime_0"),
+                InlineKeyboardButton("⏱ 10 Menit", callback_data="hook_600"),
+                InlineKeyboardButton("♾ Bebas", callback_data="hook_free"),
+            ],
+            [
+                InlineKeyboardButton("🚫 Stop", callback_data="hook_stop"),
             ],
         ]
     )
 
 # =====================
-# START TAGALL
+# HOOK COMMAND LAMA
 # =====================
-@app.on_message(filters.command(["utag", "tagall", "all"]) & ~config.BANNED_USERS)
-@ONLY_GROUP
-@ONLY_ADMIN
-async def tagall_cmd(client, message):
+@app.on_message(
+    filters.command(["tagall", "utag", "all"]) & filters.group,
+    group=-100
+)
+async def hook_tagall(_, message):
     chat_id = message.chat.id
 
-    if chat_id in active_tasks:
-        return await message.reply("❌ TagAll sedang berjalan.")
+    if TAGALL_HOOK.get(chat_id):
+        message.stop_propagation()
+        return
 
-    replied = message.reply_to_message
-    text = None
-
-    if len(message.command) > 1:
-        text = message.text.split(maxsplit=1)[1]
-    elif replied:
-        text = replied.text or replied.caption
-
-    if not text:
-        return await message.reply("❗ Balas pesan atau isi teks TagAll.")
-
-    starter = message.from_user
-
-    active_tasks[chat_id] = {
-        "text": text,
-        "starter": starter.first_name,
-        "starter_id": starter.id,
-        "duration": "-",
+    TAGALL_HOOK[chat_id] = {
+        "starter_id": message.from_user.id,
+        "starter_mention": message.from_user.mention,
+        "cmd_text": message.text,
+        "start_time": None,
+        "duration": None,
+        "allow": False,
+        "logged": False,
     }
 
-    task_messages[chat_id] = []
+    TAGALL_MSG_IDS[chat_id] = []
 
     await message.reply(
-        "⏱ <b>Pilih durasi TagAll</b>",
-        reply_markup=time_keyboard()
+        "⏳ Pilih durasi TagAll:",
+        reply_markup=tagall_keyboard()
     )
 
+    message.stop_propagation()
+
 # =====================
-# CALLBACK DURASI
+# TRACK MESSAGE TAGALL LAMA
 # =====================
-@app.on_callback_query(filters.regex("^tagtime_"))
-async def tagall_time_cb(client, cq):
-    chat_id = cq.message.chat.id
+@app.on_message(filters.group, group=100)
+async def track_old_tagall_messages(_, message):
+    chat_id = message.chat.id
+    if chat_id not in TAGALL_HOOK:
+        return
 
-    if chat_id not in active_tasks:
-        return await cq.answer("TagAll tidak aktif", show_alert=True)
-
-    try:
-        await cq.message.delete()
-    except:
-        pass
-
-    timeout = int(cq.data.split("_")[1])
-    active_tasks[chat_id]["duration"] = (
-        "3 menit" if timeout == 180 else
-        "5 menit" if timeout == 300 else
-        "10 menit" if timeout == 600 else
-        "Bebas"
-    )
-
-    text = active_tasks[chat_id]["text"]
-
-    async def tag_members():
-        count = 0
-        buffer = ""
-
-        async for m in client.get_chat_members(chat_id):
-            if chat_id not in active_tasks:
+    # deteksi pesan mention (heuristik aman)
+    if message.entities:
+        for ent in message.entities:
+            if ent.type == "text_mention" or ent.type == "mention":
+                TAGALL_MSG_IDS[chat_id].append(message.id)
                 break
 
-            if m.user.is_bot or m.user.is_deleted:
-                continue
-
-            count += 1
-            buffer += f"[{random_emoji()}](tg://user?id={m.user.id}) "
-
-            if count == 10:
-                msg = await client.send_message(
-                    chat_id,
-                    f"<b>{text}</b>\n{buffer}\n\n{POWERED}",
-                    disable_web_page_preview=True
-                )
-                task_messages[chat_id].append(msg.id)
-                buffer = ""
-                count = 0
-                await asyncio.sleep(4)
-
-        if buffer:
-            msg = await client.send_message(
-                chat_id,
-                f"<b>{text}</b>\n{buffer}\n\n{POWERED}",
-                disable_web_page_preview=True
-            )
-            task_messages[chat_id].append(msg.id)
-
-    try:
-        if timeout > 0:
-            await asyncio.wait_for(tag_members(), timeout)
-        else:
-            await tag_members()
-    except asyncio.TimeoutError:
-        pass
-    finally:
-        if chat_id in active_tasks:
-            await notify_and_cleanup(client, chat_id)
-
 # =====================
-# COMMAND BATAL
+# CALLBACK
 # =====================
-@app.on_message(filters.command(["batal", "cancel"]))
-@ONLY_GROUP
-@ONLY_ADMIN
-async def cancel_tagall(client, message):
-    chat_id = message.chat.id
+@app.on_callback_query(filters.regex("^hook_"))
+async def hook_callback(client, cq):
+    chat_id = cq.message.chat.id
+    user_id = cq.from_user.id
+    meta = TAGALL_HOOK.get(chat_id)
 
-    if chat_id not in active_tasks:
-        return await message.reply("❌ Tidak ada TagAll yang berjalan.")
+    if not meta:
+        return await cq.answer("TagAll sudah tidak aktif", show_alert=True)
 
-    data = active_tasks[chat_id]
+    # =====================
+    # STOP MANUAL
+    # =====================
+    if cq.data == "hook_stop":
+        if user_id != meta["starter_id"]:
+            try:
+                member = await client.get_chat_member(chat_id, user_id)
+                if member.status not in (
+                    enums.ChatMemberStatus.ADMINISTRATOR,
+                    enums.ChatMemberStatus.OWNER,
+                ):
+                    return await cq.answer(
+                        "❌ Hanya admin atau pemulai TagAll yang bisa menghentikan.",
+                        show_alert=True,
+                    )
+            except Exception:
+                return await cq.answer("❌ Tidak punya izin.", show_alert=True)
 
-    await message.reply(
-        f"✅ <b>TagAll telah dibatalkan.</b>\n\n"
-        f"👤 Dimulai oleh : {data['starter']}\n"
-        f"⏱ Durasi yang dipilih : {data['duration']}\n\n"
-        f"{POWERED}"
-    )
+        await stop_tagall(client, chat_id)
+        await cq.answer("🚫 TagAll dihentikan", show_alert=True)
+        return
 
-    active_tasks.pop(chat_id, None)
+    # =====================
+    # SET DURASI
+    # =====================
+    duration = None if cq.data == "hook_free" else int(cq.data.split("_")[1])
+    meta["duration"] = duration
+    meta["start_time"] = time.time()
+    meta["allow"] = True
+    TAGALL_HOOK[chat_id] = meta
 
-# =====================
-# CLEANUP + AUTO DELETE
-# =====================
-async def notify_and_cleanup(client, chat_id):
-    notice = await client.send_message(
-        chat_id,
-        f"⏰ <b>Pesan TagAll akan dihapus</b>\n\n"
-        f"Mohon tunggu 1 menit...\n\n"
-        f"{POWERED}"
-    )
+    await cq.message.delete()
+    await cq.answer("✅ TagAll dimulai")
 
-    await asyncio.sleep(60)
-
-    for msg_id in task_messages.get(chat_id, []):
-        try:
-            await client.delete_messages(chat_id, msg_id)
-        except:
-            pass
-
-    try:
-        await notice.delete()
-    except:
-        pass
-
-    data = active_tasks.get(chat_id)
-    if data:
+    # =====================
+    # LOG SEKALI SAJA
+    # =====================
+    if not meta["logged"]:
+        meta["logged"] = True
         await client.send_message(
             chat_id,
-            f"🧾 <b>TagAll selesai</b>\n\n"
-            f"👤 Username : {data['starter']}\n"
-            f"🆔 ID : <code>{data['starter_id']}</code>\n\n"
-            f"{POWERED}"
+            f"📣 TagAll dimulai\n"
+            f"👤 Oleh: {meta['starter_mention']}\n"
+            f"⏱ Durasi: {'Bebas' if duration is None else str(duration // 60) + ' menit'}"
         )
 
-    active_tasks.pop(chat_id, None)
-    task_messages.pop(chat_id, None)
+    # =====================
+    # JALANKAN COMMAND LAMA
+    # =====================
+    await client.send_message(chat_id, meta["cmd_text"])
+
+    # =====================
+    # AUTO STOP
+    # =====================
+    if duration:
+        async def auto_stop():
+            await asyncio.sleep(duration)
+            await stop_tagall(client, chat_id, auto=True)
+
+        asyncio.create_task(auto_stop())
+
+# =====================
+# STOP + AUTO DELETE
+# =====================
+async def stop_tagall(client, chat_id, auto=False):
+    if chat_id not in TAGALL_HOOK:
+        return
+
+    try:
+        await client.send_message(chat_id, "/cancel")
+    except Exception:
+        pass
+
+    if auto:
+        await client.send_message(
+            chat_id,
+            "🕒 TagAll selesai.\n🗑 Semua pesan TagAll akan dihapus dalam 1 menit."
+        )
+        await asyncio.sleep(60)
+
+    # hapus semua batch message lama
+    ids = TAGALL_MSG_IDS.get(chat_id, [])
+    for mid in set(ids):
+        try:
+            await client.delete_messages(chat_id, mid)
+        except Exception:
+            pass
+
+    TAGALL_HOOK.pop(chat_id, None)
+    TAGALL_MSG_IDS.pop(chat_id, None)
